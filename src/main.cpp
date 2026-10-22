@@ -4,13 +4,9 @@
 
 int main() {
     Tree* t = new Tree(25);
-    
+
+    t->random_walk(2500);
     t->print_data();
-    for (int i = 0; i < 100; i++) {
-        t->random_flip();
-        t->print_flip();
-    }
-    t->print_tree();
 
     return 0;
 }

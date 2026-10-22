@@ -14,6 +14,16 @@
 std::random_device rd;
 xoshiro256ss gen(rd());
 
+void inorder(std::vector<TreeNode*> m_nodes, int size, int i, int* label) {
+	if (i >= size) {
+		return;
+	}
+
+	inorder(m_nodes, size, 2 * i + 1, label);
+	m_nodes[i]->m_data = *label;
+	(*label)++;
+	inorder(m_nodes, size, 2 * i + 2, label);
+}
 /**
  * Creates a new binary tree of size `n` and populates
  * the nodes with arbitrary numerical data while filling the
@@ -39,7 +49,9 @@ Tree::Tree(int size) {
 		if (i * 2 + 1 < size) curr->left = m_nodes.at(i * 2 + 1);
 		if (i * 2 + 2 < size) curr->right = m_nodes.at(i * 2 + 2);
 	}
-
+	
+	int inorder_counter = 0;
+	inorder(m_nodes, size, 0, &inorder_counter);
 	build_flip_list();
 }
 
@@ -50,6 +62,15 @@ Tree::~Tree() {
 	}
 }
 
+/**
+ * Sets the direction of a given flip node.
+ * LEFT rotations occur when a node is the right child of its parent.
+ * RIGHT rotations occur when a node is the left child of its parent.
+ * NONE is used in the case that the node is the root, which cannot be picked
+ * from the random flip distribution + is ignored.
+ * 
+ * @param f The flip node to modify.
+ */
 void set_dir(FlipNode* f) {
 	TreeNode* n = f->node;
 	if (n->parent == nullptr) {
@@ -80,11 +101,19 @@ void Tree::refresh_flip(FlipNode* f) {
 	if (f == m_ft->left_head && f == m_ft->left_tail) {
 		m_ft->left_head = nullptr;
 		m_ft->left_tail = nullptr;
+	} else if (f == m_ft->left_head) {
+		m_ft->left_head = f->next;
+	} else if (f == m_ft->left_tail) {
+		m_ft->left_tail = f->prev;
 	}
 
 	if (f == m_ft->right_head && f == m_ft->right_tail) {
 		m_ft->right_head = nullptr;
 		m_ft->right_tail = nullptr;
+	} else if (f == m_ft->right_head) {
+		m_ft->right_head = f->next;
+	} else if (f == m_ft->right_tail) {
+		m_ft->right_tail = f->prev;
 	}
 
 	// Close list around f
@@ -96,50 +125,54 @@ void Tree::refresh_flip(FlipNode* f) {
 		f->next->prev = f->prev;
 	}
 
-	if (m_ft->root == f) m_ft->root = nullptr;
+	if (m_ft->root == f) {
+		m_ft->root = nullptr;
+	}
 
+	f->prev = nullptr;
+	f->next = nullptr;
+	
 	if (f->dir == Rotation::NONE) {
 		// Set the new root node to the head of the list
+		f->next = m_ft->root;
+		
+		if (m_ft->root) m_ft->root->prev = f;
 		m_ft->root = f;
-
-		f->prev = nullptr;
-		f->next = m_ft->left_head;
-		m_ft->left_head->prev = f;
-
 		return;
 	}
 
 	// Add node to either the left list / right list
+	FlipNode* anchor;
 	if (f->dir == Rotation::LEFT) {
-		FlipNode* insert = m_ft->left_tail;
-		if (insert == nullptr) insert = m_ft->root;
-
-		insert->next = f;
-		f->prev = insert;
-
-		if (insert == m_ft->root) {
-			m_ft->left_head = f;
-			m_ft->left_tail = f;
-		}
-
-		if (m_ft->right_head) {
-			m_ft->right_head->prev = f;
-			f->next = m_ft->right_head;
-		}
+		anchor = m_ft->left_tail ? m_ft->left_tail : m_ft->root;
 	} else {
-		FlipNode* insert = m_ft->right_tail;
-		if (insert == nullptr) insert = m_ft->left_tail;
-		if (insert == nullptr) insert = m_ft->root;
+		if (m_ft->right_tail) {
+			anchor = m_ft->right_tail;
+		} else {
+			anchor = m_ft->left_tail ? m_ft->left_tail : m_ft->root;
+		}
+	}
 
-		insert->next = f;
-		f->prev = insert;
+	f->prev = anchor;
+	f->next = anchor->next;
 
-		if (insert == m_ft->root || insert == m_ft->left_tail) {
-			m_ft->right_head = f;
-			m_ft->right_tail = f;
+	if (anchor->next) {
+		anchor->next->prev = f;
+	}
+	anchor->next = f;
+
+	if (f->dir == Rotation::LEFT) {
+		if (!m_ft->left_head) {
+			m_ft->left_head = f;
 		}
 
-		f->next = nullptr;
+		m_ft->left_tail = f;
+	} else {
+		if (!m_ft->right_head) {
+			m_ft->right_head = f;
+		}
+
+		m_ft->right_tail = f;
 	}
 }
 
