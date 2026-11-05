@@ -5,9 +5,6 @@
 
 #include <mpi.h>
 
-
-
-
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
 
@@ -56,7 +53,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Lambda = " << lambda << " K = " << K << std::endl;
     }
 
-//    std::cout << "Samples per process: " << samples_per_process << std::endl;
+    std::cout << "Samples per process: " << samples_per_process << std::endl;
 
     for (n = 2; n < 1024; n *= 2) {
         std::vector<int> prufer_sequence = create_prufer_sequence(n, 12781358);
@@ -69,8 +66,8 @@ int main(int argc, char *argv[]) {
         double actual_independent_sets = 0;
         if (rank == 0) {
             actual_independent_sets = num_ind_sets(g, 0, lambda);
-//            std::cout << "\nStarting simulation for n = " << n << std::endl;
-//            std::cout << "Actual Number of Independent Sets: " << actual_independent_sets << std::endl;
+            std::cout << "\nStarting simulation for n = " << n << std::endl;
+            std::cout << "Actual Number of Independent Sets: " << actual_independent_sets << std::endl;
         }
         MPI_Bcast(&actual_independent_sets, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
@@ -121,15 +118,15 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-        //    std::cout << "World Rank: " << rank << " Sub Rank: " << sub_rank << " Alpha: " << alpha << std::endl;
+            std::cout << "World Rank: " << rank << " Sub Rank: " << sub_rank << " Alpha: " << alpha << std::endl;
             MPI_Reduce(&alpha, &sum_alpha, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
             if (rank == 0) {
                 double averaged_alpha = sum_alpha / (num_processes < epochs ? num_processes : epochs);
 
                 if (averaged_alpha <= actual_independent_sets * 1.4) {
-//                    std::cout << "Averaged Alpha: " << averaged_alpha  << std::endl;
-//                    std::cout << "T: " << T << std::endl;
+                    std::cout << "Averaged Alpha: " << averaged_alpha  << std::endl;
+                    std::cout << "T: " << T << std::endl;
                     std::cout << T << "," << n << std::endl;
                     within_threshold = true;
                 }
