@@ -11,7 +11,5 @@ std::vector<int> create_prufer_sequence(int num_vertices, unsigned int seed);
 void print_prufer_sequence(const std::vector<int>& prufer_sequence);
 Graph prufer_sequence_to_tree(const std::vector<int>& prufer_sequence);
 void tree_to_dot(const Graph& g, const std::string& filename);
-void dot_to_tree(const std::string& filename, Graph& g);
-
 
 #endif //RANDOM_TREES_H

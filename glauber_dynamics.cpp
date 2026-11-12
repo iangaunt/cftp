@@ -3,11 +3,11 @@
 #include <iostream>
 #include <random>
 #include "random_trees.h"
-#include "dynamic_programming.h"
-#include <cmath>
 #include <boost/graph/copy.hpp>
-#include <future>
-#include <thread>
+#include <queue>
+
+#define IN 1
+#define OUT 0
 
 // Random step T_k in CFTP (vertex v with prob. u)
 struct Step {
@@ -15,97 +15,52 @@ struct Step {
     double u;
 };
 
-// Represents if a vertex is inside the 
-// coalesced independent set or not
-enum VertState { 
-    IN, OUT, 
-    UNKNOWN // UNKNOWN = not coalesced
-};
-
-bool is_independent_set(const std::set<int>& independent_set, int vertex, const Graph& g) {
-    for (auto neighbor : boost::make_iterator_range(boost::adjacent_vertices(vertex, g))) {
-        if (independent_set.find(neighbor) != independent_set.end()) {
-            return false;
-        }
-    }
-    return true;
-}
-
-std::set<int> glauber_dynamics(const Graph& g, int T, unsigned int seed, double lambda) {
-    std::set<int> independent_set;
-    std::mt19937 rng(seed);
-    std::uniform_int_distribution<> vertex_picker(0, boost::num_vertices(g) - 1);
-    std::uniform_real_distribution<> percent_chance(0.0, 1.0);
-
-    for (int t = 0; t < T; t++) {
-        int vertex = vertex_picker(rng);
-
-        if (independent_set.find(vertex) != independent_set.end()) {
-            if (percent_chance(rng) <  1 / (1 + lambda)) {
-                independent_set.erase(vertex);
-            }
-        }
-        else if (is_independent_set(independent_set, vertex, g)) {
-            if (percent_chance(rng) < lambda / (1 + lambda)) {
-                independent_set.insert(vertex);
-            }
-        }
-    }
-
-    return independent_set;
-}
-
 void step_forward(std::vector<int>& state, const Step& step, const Graph& g, double lambda) {
     int v = step.vertex;
-
-    bool any_neighbors_in = false;
     bool all_neighbors_out = true;
 
     for (auto neighbor : boost::make_iterator_range(boost::adjacent_vertices(v, g))) {
-        if (state[neighbor] == VertState::IN) {
-            any_neighbors_in = true;
-        }
-
-        if (state[neighbor] != VertState::OUT) {
+        if (state[neighbor] == IN) {
             all_neighbors_out = false;
+            break;
         }
     }
 
-    const double insert_prob = lambda / (1.0 + lambda);
-    const double remove_prob = 1.0 / (1.0 + lambda);
-
-    if (step.u > insert_prob && step.u > remove_prob) {
+    // Remove vertex if v is in the set
+    if (state[v] == 1 && step.u < 1.0 / (1.0 + lambda)) {
+        state[v] = OUT;
         return;
     }
-
-    if (step.u < insert_prob && step.u < remove_prob) {
-        if (any_neighbors_in || state[v] == VertState::IN) {
-            state[v] = VertState::OUT;
-        } else if (state[v] == VertState::OUT && all_neighbors_out) {
-            state[v] = VertState::IN;
-        } else {
-            state[v] = VertState::UNKNOWN;
-        }
-
+    
+    // Add vertex if v is not in the set 
+    // and no neighbors are in the set
+    if (state[v] == 0 && step.u < lambda / (1.0 + lambda) && all_neighbors_out) {
+        state[v] = IN;
         return;
-    }
-
-    // If one of the events occurs, then check to see 
-    // if it favors insertions (high lambda) or removals (low lambda)
-    if (lambda > 1.0) {
-        if (any_neighbors_in) {
-            state[v] = VertState::OUT;
-        } else if (all_neighbors_out) {
-            state[v] = VertState::IN;
-        } else {
-            state[v] = VertState::UNKNOWN;
-        }
-    } else {
-        state[v] = VertState::OUT;
     }
 }
 
-std::set<int> glauber_cftp(const Graph& g, unsigned int seed, double lambda) {
+// Calculates depth of each vertex in the graph from
+// the first vertex (supposed root)
+void calculate_depth(const Graph& g, std::vector<int>& depth) {
+    std::queue<int> q;
+    depth[0] = 0;
+    q.push(0);
+
+    while (!q.empty()) {
+        int vertex = q.front();
+        q.pop();
+
+        for (auto neighbor : boost::make_iterator_range(boost::adjacent_vertices(vertex, g))) {
+            if (depth[neighbor] == -1) {
+                depth[neighbor] = depth[vertex] + 1;
+                q.push(neighbor);
+            }
+        }
+    }
+}
+
+int glauber_cftp(const Graph& g, unsigned int seed, double lambda) {
     std::mt19937 rng(seed);
     std::uniform_int_distribution<> vertex_picker(0, boost::num_vertices(g) - 1);
     std::uniform_real_distribution<> percent_chance(0.0, 1.0);
@@ -115,39 +70,42 @@ std::set<int> glauber_cftp(const Graph& g, unsigned int seed, double lambda) {
         return {};
     }
 
-    std::deque<Step> steps;
-    for (int T = 1; ; T++) {
-        //printf("n: %d, T: %d\n", n, T);
+    // Create min and max states (alternating IN and OUT for each generation)
+    std::vector<int> depth(n, -1);
+    calculate_depth(g, depth);
 
+    std::vector<int> min_tree(n);
+    std::vector<int> max_tree(n);
+    std::deque<Step> steps;
+    
+    for (int T = 1; ; T *= 2) {
         while (steps.size() < T) {
             steps.push_front(
                 {vertex_picker(rng), percent_chance(rng)}
             );
         }
 
-        std::vector<int> state(n, UNKNOWN);
+        for (int i = 0; i < n; i++) {
+            min_tree[i] = depth[i] % 2 == 0 ? OUT : IN;
+            max_tree[i] = depth[i] % 2 == 0 ? IN : OUT;
+        }
+
+        // Perform coupling from the past on both max & min states
         for (Step& step : steps) {
-            step_forward(state, step, g, lambda);
+            step_forward(min_tree, step, g, lambda);
+            step_forward(max_tree, step, g, lambda);
         }
 
         bool coalesced = true;
-        for (auto s : state) {
-            if (s == UNKNOWN) { 
-                coalesced = false; 
-                break; 
+        for (int i = 0; i < n; i++) {
+            if (min_tree[i] != max_tree[i]) {
+                coalesced = false;
+                break;
             }
         }
 
         if (coalesced) {
-            std::set<int> independent_set;
-            for (int v = 0; v < n; v++) {
-                if (state[v] == IN) {
-                    independent_set.insert(v);
-                }
-            }
-
-            std::cout << "n: " << n << ", coalescence time: " << T << std::endl;
-            return independent_set;
+            return T;
         }
     }
 }
